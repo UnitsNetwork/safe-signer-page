@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Safe Transaction with MetaMask</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        label { display: block; margin-top: 10px; }
+        input { width: 100%; padding: 5px; }
+        button { margin-top: 10px; padding: 10px; }
+        #output { margin-top: 20px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+<h1>Sign Safe Transaction with MetaMask</h1>
+<p>This page allows you to sign a transaction for a Safe wallet using MetaMask. Enter the details below and click Sign.</p>
+
+<button id="connectButton">Connect MetaMask</button>
+
+<form id="txForm" style="display: none;">
+    <label for="safeAddress">Safe Address:</label>
+    <input type="text" id="safeAddress" placeholder="0x..." required>
+
+    <button id="fetchNonce">Fetch Nonce</button>
+
+    <label for="to">To Address:</label>
+    <input type="text" id="to" placeholder="0x..." required>
+
+    <label for="value">Value (in wei):</label>
+    <input type="text" id="value" value="0" required>
+
+    <label for="data">Data (hex):</label>
+    <input type="text" id="data" value="0x" required>
+
+    <label for="nonce">Nonce:</label>
+    <input type="text" id="nonce" required>
+
+    <button type="button" id="signButton">Sign Transaction</button>
+</form>
+
+<div id="output"></div>
+
+<script type="module">
+    import { ethers } from "https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js";
+    // Your code here...
+
+    let provider;
+    let signer;
+    let chainId;
+
+    window.addEventListener('load', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+
+        if (urlParams.has('safeAddress')) {
+            document.getElementById('safeAddress').value = urlParams.get('safeAddress');
+        }
+        if (urlParams.has('to')) {
+            document.getElementById('to').value = urlParams.get('to');
+        }
+        if (urlParams.has('value')) {
+            document.getElementById('value').value = urlParams.get('value');
+        }
+        if (urlParams.has('data')) {
+            document.getElementById('data').value = urlParams.get('data');
+        }
+    });
+
+    const connectButton = document.getElementById('connectButton');
+    const txForm = document.getElementById('txForm');
+    const fetchNonce = document.getElementById('fetchNonce');
+    const signButton = document.getElementById('signButton');
+    const output = document.getElementById('output');
+
+    connectButton.addEventListener('click', async () => {
+        if (window.ethereum) {
+            provider = new ethers.BrowserProvider(window.ethereum)
+            await provider.send("eth_requestAccounts", []);
+            signer = await provider.getSigner();
+            const network = await provider.getNetwork();
+            chainId = network.chainId;
+            connectButton.textContent = 'MetaMask Connected';
+            connectButton.disabled = true;
+            txForm.style.display = 'block';
+            output.textContent = `Connected to chain ID: ${chainId}`;
+        } else {
+            output.textContent = 'MetaMask not detected.';
+        }
+    });
+
+    fetchNonce.addEventListener('click', async () => {
+        const safeAddress = document.getElementById('safeAddress').value;
+        if (!ethers.isAddress(safeAddress)) {
+            output.textContent = 'Invalid Safe address.';
+            return;
+        }
+        const safeContract = new ethers.Contract(safeAddress, ['function nonce() view returns (uint256)'], provider);
+        try {
+            const nonce = await safeContract.nonce();
+            document.getElementById('nonce').value = nonce.toString();
+            output.textContent = `Nonce fetched: ${nonce}`;
+        } catch (error) {
+            output.textContent = `Error fetching nonce: ${error.message}`;
+        }
+    });
+
+    signButton.addEventListener('click', async () => {
+        const safeAddress = document.getElementById('safeAddress').value;
+        if (!ethers.isAddress(safeAddress)) {
+            output.textContent = 'Invalid Safe address.';
+            return;
+        }
+
+        const tx = {
+            to: document.getElementById('to').value,
+            value: document.getElementById('value').value,
+            data: document.getElementById('data').value,
+            operation: 0,
+            safeTxGas: '0',
+            baseGas: '0',
+            gasPrice: '0',
+            gasToken: '0x0000000000000000000000000000000000000000',
+            refundReceiver: '0x0000000000000000000000000000000000000000',
+            nonce: document.getElementById('nonce').value
+        };
+
+        // Validate addresses
+        if (!ethers.isAddress(tx.to) || !ethers.isAddress(tx.gasToken) || !ethers.isAddress(tx.refundReceiver)) {
+            output.textContent = 'Invalid address in fields.';
+            return;
+        }
+
+        // Ensure data is bytes
+        try {
+            ethers.getBytes(tx.data);
+        } catch {
+            output.textContent = 'Invalid data hex.';
+            return;
+        }
+
+        const domain = {
+            chainId: chainId,
+            verifyingContract: safeAddress
+        };
+
+        const types = {
+            SafeTx: [
+                { type: 'address', name: 'to' },
+                { type: 'uint256', name: 'value' },
+                { type: 'bytes', name: 'data' },
+                { type: 'uint8', name: 'operation' },
+                { type: 'uint256', name: 'safeTxGas' },
+                { type: 'uint256', name: 'baseGas' },
+                { type: 'uint256', name: 'gasPrice' },
+                { type: 'address', name: 'gasToken' },
+                { type: 'address', name: 'refundReceiver' },
+                { type: 'uint256', name: 'nonce' }
+            ]
+        };
+
+        console.log(signer)
+
+        try {
+            const signature = await signer.signTypedData(domain, types, tx);
+            output.textContent = `Signature: ${signature}`;
+        } catch (error) {
+            output.textContent = `Error signing: ${error.message}`;
+        }
+    });
+</script>
+</body>
+</html>
